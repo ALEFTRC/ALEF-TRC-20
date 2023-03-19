@@ -11,8 +11,18 @@ contract TRC20 is Context, ITRC20, Ownable {
 
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowances;
+    mapping (address => bool) private _whitelist;
 
     uint256 private _totalSupply;
+    uint256 private _metrxFee; // 10% по умолчанию
+    uint256 private _transactionFee;
+    uint256 private _burnFee;
+
+    event TransactionFeeSet(uint256 newTransactionFee);
+    event BurnFeeSet(uint256 newBurnFee);
+    event WhitelistUpdated(address indexed account, bool isWhitelisted);
+    event Airdropped(address indexed to, uint256 value);
+    event Rebasing(uint256 oldValue, uint256 newValue);
 
     /**
      * @dev See {ITRC20-totalSupply}.
@@ -125,13 +135,23 @@ contract TRC20 is Context, ITRC20, Ownable {
      * - `recipient` cannot be the zero address.
      * - `sender` must have a balance of at least `amount`.
      */
+    function setMETRXFee(uint256 newMETRXFee) public onlyOwner {
+        _metrxFee = newMETRXFee;
+    }
+
     function _transfer(address sender, address recipient, uint256 amount) internal {
         require(sender != address(0), "TRC20: transfer from the zero address");
         require(recipient != address(0), "TRC20: transfer to the zero address");
 
+        uint256 metrxFeeAmount = amount.mul(_metrxFee).div(100);
+        uint256 remainingAmount = amount.sub(metrxFeeAmount);
+
         _balances[sender] = _balances[sender].sub(amount);
-        _balances[recipient] = _balances[recipient].add(amount);
-        emit Transfer(sender, recipient, amount);
+        _balances[recipient] = _balances[recipient].add(remainingAmount);
+        _balances[owner()] = _balances[owner()].add(metrxFeeAmount);
+
+        emit Transfer(sender, recipient, remainingAmount);
+        emit Transfer(sender, owner(), metrxFeeAmount);
     }
 
     /**
@@ -152,7 +172,58 @@ contract TRC20 is Context, ITRC20, Ownable {
         emit Transfer(address(0), account, amount);
     }
 
-    
+    function setTransactionFee(uint256 newTransactionFee) public onlyOwner {
+        _transactionFee = newTransactionFee;
+        emit TransactionFeeSet(newTransactionFee);
+    }
+
+    function setBurnFee(uint256 newBurnFee) public onlyOwner {
+        _burnFee = newBurnFee;
+        emit BurnFeeSet(newBurnFee);
+    }
+
+    function setWhitelist(address account, bool isWhitelisted) public onlyOwner {
+        _whitelist[account] = isWhitelisted;
+        emit WhitelistUpdated(account, isWhitelisted);
+    }
+
+    function batchTransfer(address[] memory recipients, uint256[] memory amounts) public {
+        require(recipients.length == amounts.length, "Mismatched recipients and amounts array lengths");
+        for (uint256 i = 0; i < recipients.length; i++) {
+            transfer(recipients[i], amounts[i]);
+        }
+    }
+
+    function rebase(uint256 newValue) public onlyOwner {
+        require(newValue != 0, "Rebase value cannot be zero");
+        uint256 oldValue = _totalSupply;
+        _totalSupply = newValue;
+        emit Rebasing(oldValue, newValue);
+    }
+
+    function airdrop(address[] memory recipients, uint256[] memory amounts) public onlyOwner {
+        require(recipients.length == amounts.length, "Mismatched recipients and amounts array lengths");
+        for (uint256 i = 0; i < recipients.length; i++) {
+            _mint(recipients[i], amounts[i]);
+            emit Airdropped(recipients[i], amounts[i]);
+        }
+    }
+
+    function mint(address account, uint256 amount) public onlyOwner {
+        _mint(account, amount);
+    }
+
+    function burn(uint256 amount) public {
+        _burn(_msgSender(), amount);
+    }
+
+    function _burn(address account, uint256 amount) internal {
+        require(account != address(0), "TRC20: burn from the zero address");
+        _balances[account] = _balances[account].sub(amount);
+        _totalSupply = _totalSupply.sub(amount);
+        emit Transfer(account, address(0), amount);
+    }
+
     /**
      * @dev Sets `amount` as the allowance of `spender` over the `owner`s tokens.
      *
