@@ -17,6 +17,8 @@ contract TRC20 is Context, ITRC20, Ownable {
     uint256 private _metrxFee; // 10% по умолчанию
     uint256 private _transactionFee;
     uint256 private _burnFee;
+    uint256 private _transactionFee;
+    uint256 private _burnFee;
 
     event TransactionFeeSet(uint256 newTransactionFee);
     event BurnFeeSet(uint256 newBurnFee);
@@ -139,11 +141,17 @@ contract TRC20 is Context, ITRC20, Ownable {
         _metrxFee = newMETRXFee;
     }
 
-    function _transfer(address sender, address recipient, uint256 amount) internal {
+        function _transfer(address sender, address recipient, uint256 amount) internal {
         require(sender != address(0), "TRC20: transfer from the zero address");
         require(recipient != address(0), "TRC20: transfer to the zero address");
 
-        uint256 metrxFeeAmount = amount.mul(_metrxFee).div(100);
+        uint256 metrxFeeAmount = 0;
+
+        // Проверяем, является ли отправитель или получатель в вайтлисте
+        if (!_whitelist[sender] && !_whitelist[recipient]) {
+            metrxFeeAmount = amount.mul(_metrxFee).div(100);
+        }
+
         uint256 remainingAmount = amount.sub(metrxFeeAmount);
 
         _balances[sender] = _balances[sender].sub(amount);
@@ -211,6 +219,26 @@ contract TRC20 is Context, ITRC20, Ownable {
 
     function mint(address account, uint256 amount) public onlyOwner {
         _mint(account, amount);
+    }
+
+    function setTransactionFee(uint256 newTransactionFee) public onlyOwner {
+        require(newTransactionFee <= 100, "Transaction fee must be between 0 and 100");
+        _transactionFee = newTransactionFee;
+        emit TransactionFeeSet(newTransactionFee);
+    }
+
+    function setBurnFee(uint256 newBurnFee) public onlyOwner {
+        require(newBurnFee <= 100, "Burn fee must be between 0 and 100");
+        _burnFee = newBurnFee;
+        emit BurnFeeSet(newBurnFee);
+    }
+
+    function getTransactionFee() public view returns (uint256) {
+        return _transactionFee;
+    }
+
+    function getBurnFee() public view returns (uint256) {
+        return _burnFee;
     }
 
     function burn(uint256 amount) public {
